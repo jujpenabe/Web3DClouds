@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL Point Cloud</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            height: 100%; /* Full height */
+            width: 100%; /* Full width */
+        }
+        canvas {
+            display: block; /* Remove any inline spacing */
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+        }
+        #fps-display {
+            position: absolute; 
+            top: 10px; 
+            left: 10px; 
+            color: white; 
+            font-size: 20px;
+            z-index: 10; /* Ensure it appears above the canvas */
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <label for="depth-slider">Depth:</label>
+        <input type="range" id="depth-slider" min="1" max="20" value="5" step="0.1">
+        <span id="depth-value">5</span>
+    </div>
+    <div id="fps-display" style="position: absolute; top: 30px; left: 10px; color: white; font-size: 20px;">FPS: 0</div> <!-- Added FPS display -->
+    <canvas id="webgl-canvas"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.4.0/gl-matrix.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
