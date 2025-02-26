@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+const x_size = 800;
+const y_size = 600;
+
 class PointCloudApp {
   constructor() {
     // Scene setup
@@ -8,12 +11,12 @@ class PointCloudApp {
     this.scene.background = new THREE.Color(0x000000);
 
     // Camera configuration
-    this.camera = new THREE.PerspectiveCamera(75, 800 / 600, 2, 1000);
+    this.camera = new THREE.PerspectiveCamera(75, x_size / y_size, 2, 1000);
     this.camera.position.set(350, 150, 40);
 
     // Renderer setup
     this.renderer = new THREE.WebGLRenderer();
-    this.renderer.setSize(800, 600);
+    this.renderer.setSize(x_size, y_size);
     document.body.appendChild(this.renderer.domElement);
 
     // Controls
@@ -22,7 +25,7 @@ class PointCloudApp {
     // Application state
     this.points = [];
     this.fallback = [];
-    this.color = "#C70000";
+    this.color = "#00CC00";
     this.depth = 0.5;
     this.recording = false;
 
@@ -94,7 +97,7 @@ class PointCloudApp {
     this.performanceDiv = document.createElement("div");
     this.performanceDiv.style.position = "absolute";
     this.performanceDiv.style.top = "0px";
-    this.performanceDiv.style.left = "800px";
+    this.performanceDiv.style.left = x_size + "px";
     this.performanceDiv.style.backgroundColor = "rgba(0,0,0,0.8)";
     this.performanceDiv.style.color = "white";
     this.performanceDiv.style.padding = "10px";
@@ -166,8 +169,8 @@ class PointCloudApp {
     if (!this.recording) return;
 
     // Normalize mouse coordinates
-    const mouseXNorm = (event.clientX * 2) / 600 - 1;
-    const mouseYNorm = -((event.clientY / 300) * 2) + 1;
+    const mouseXNorm = (event.clientX * 2) / x_size - 1;
+    const mouseYNorm = -((event.clientY / y_size) * 2) + 1;
 
     // Create mouse position vector
     const mousePosition = new THREE.Vector3(mouseXNorm, mouseYNorm, this.depth);
