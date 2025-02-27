@@ -35,6 +35,8 @@ class PointCloudApp {
     this.performanceFPS = 0;
     this.performanceMaxPoints = 0;
 
+    // Brush type: sphere, ellipse
+    this.brushType = "ellipse"
     // Initialize the application
     this.init();
   }
@@ -109,8 +111,8 @@ class PointCloudApp {
     // Depth slider
     const depthSlider = document.createElement("input");
     depthSlider.type = "range";
-    depthSlider.min = 0;
-    depthSlider.max = 1;
+    depthSlider.min = 0.01;
+    depthSlider.max = 0.99;
     depthSlider.step = 0.01;
     depthSlider.value = this.depth;
     depthSlider.style.position = "absolute";
@@ -129,6 +131,30 @@ class PointCloudApp {
     colorPicker.style.left = "20px";
     colorPicker.oninput = (e) => (this.color = e.target.value);
     document.body.appendChild(colorPicker);
+
+    // Add brush type selector
+    const brushSelector = document.createElement("select");
+    brushSelector.style.position = "absolute";
+    brushSelector.style.top = "60px";
+    brushSelector.style.left = "20px";
+    
+    const sphereOption = document.createElement("option");
+    sphereOption.value = "sphere";
+    sphereOption.textContent = "Sphere Brush";
+
+    const ellipseOption = document.createElement("option");
+    ellipseOption.value = "ellipse";
+    ellipseOption.textContent = "Ellipse Brush";
+    ellipseOption.selected = true;
+
+    brushSelector.appendChild(sphereOption);
+    brushSelector.appendChild(ellipseOption);
+
+    brushSelector.onchange = (e) => {
+      this.brushType = e.target.value;
+    };
+
+    document.body.appendChild(brushSelector);
   }
 
   loadPointsFromJSON(filePath) {
@@ -142,7 +168,7 @@ class PointCloudApp {
           color: this.convertColor(entry.color),
         }));
         this.points = [...this.fallback];
-        this.fallback.forEach(this.addPointToScene.bind(this));
+        this.fallback.forEach(this.addEllipseToScene.bind(this));
       },
       undefined,
       (error) => console.error("Error loading JSON file:", error)
@@ -157,13 +183,62 @@ class PointCloudApp {
     return new THREE.Color(colorArray);
   }
 
-  addPointToScene({ worldPosition, color }) {
+  add3DSphereToScene({ worldPosition, color }) {
     const geometry = new THREE.SphereGeometry(1);
     const material = new THREE.MeshBasicMaterial({ color });
     const point = new THREE.Mesh(geometry, material);
     point.position.copy(worldPosition);
     this.scene.add(point);
   }
+
+  addEllipseToScene({ worldPosition, color }) {
+  const width = this.ellipseWidth || 2;  // Default width
+  const height = this.ellipseHeight || 1;  // Default height
+  const segments = 32;
+  
+  // Create an ellipse curve
+  const curve = new THREE.EllipseCurve(
+    0, 0,                      // Center x, y
+    width/2, height/2,         // Radius x, y
+    0, 2 * Math.PI,            // Start and end angle
+    false,                     // Clockwise
+    0                          // Rotation
+  );
+  
+  // Generate points along the curve
+  const points = curve.getPoints(segments);
+  
+  // Create a shape from the points
+  const shape = new THREE.Shape();
+  shape.moveTo(points[0].x, points[0].y);
+  points.forEach(point => {
+    shape.lineTo(point.x, point.y);
+  });
+  
+  // Create a flat geometry from the shape
+  const shapeGeometry = new THREE.ShapeGeometry(shape);
+  
+  // Material for the ellipse - flat with no depth
+  const material = new THREE.MeshBasicMaterial({
+    color: color,
+    side: THREE.DoubleSide,
+    depthTest: true    // Enable depth testing so ellipses stack correctly
+  });
+  
+  // Create the mesh
+  const ellipse = new THREE.Mesh(shapeGeometry, material);
+  
+  // Position at the specified point
+  ellipse.position.copy(worldPosition);
+  
+  // Make the ellipse always face the camera (billboard effect)
+  ellipse.lookAt(this.camera.position);
+  
+  // Add to the scene
+  this.scene.add(ellipse);
+  
+  return ellipse;
+}
 
   addNewPoint(event) {
     if (!this.recording) return;
@@ -183,7 +258,13 @@ class PointCloudApp {
       color: new THREE.Color(this.color),
     };
 
-    this.addPointToScene(newPoint);
+    // Add the point using the selected brush type
+    if (this.brushType === "sphere") {
+      this.add3DSphereToScene(newPoint);
+    } else if (this.brushType === "ellipse") {
+      this.addEllipseToScene(newPoint);
+    }
+
     this.points.push(newPoint);
   }
 
@@ -223,6 +304,9 @@ class PointCloudApp {
         break;
       case "f": // Focus camera
         this.focusCamera();
+        break;
+      case "b": // Toggle brush type
+        this.brushType === "ellipse" ? this.brushType = "sphere" : this.brushType = "ellipse";
         break;
       default:
         break;
@@ -336,8 +420,6 @@ class PointCloudApp {
       }
     }
 
-    
-    
     
     // Update controls and render
     this.controls.update();
