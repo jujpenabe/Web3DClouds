@@ -1,127 +1,353 @@
 'use strict'
 
-let color, depth, brush, escorzo = true;
+// Variables globales
+let color, depth, escorzo = true;
+let is_simulating = false;
+let intervalId;
 let fallback = [], points = [];
 let record;
+let nextToAdd = { count: 100, seed: 44 };
+let cachedVectors;
 
-// Performance tracking variables
-let performanceStartTime = 0;
-let performanceFrameCount = 0;
-let performanceFPS = 0;
-let performanceMaxPoints = 0;
-let performanceDiv;
+const x_size = 800;
+const y_size = 600;
+
+// Variables para renderizado optimizado
+let instancedRenderer;
+let staticBuffersNeedUpdate = true;
 
 function preload() {
   loadJSON('cloud_500.json', json =>
     fallback = json.map(entry => ({
       worldPosition: createVector(entry.x, entry.y, entry.z),
-      color: entry.color
+      color: Array.isArray(entry.color) ? entry.color : [1, 0.75, 0.8, 1] // Color por defecto rosado
     }))
   )
 }
 
 function setup() {
   frameRate(1000);
-  const canvas = createCanvas(800, 600, WEBGL);
+  const canvas = createCanvas(x_size, y_size, WEBGL);
   colorMode(RGB, 1);
   document.oncontextmenu = () => false;
-  points = [...fallback];
 
-  // Create performance display
-  performanceDiv = createDiv('');
-  performanceDiv.position(width, 0);
-  performanceDiv.style('background-color', 'rgba(0,0,0,0.8)');
-  performanceDiv.style('color', 'white');
-  performanceDiv.style('padding', '10px');
+  cachedVectors = {
+    direction: createVector(),
+    defaultForward: createVector(0, 0, 1),
+    rotationAxis: createVector()
+  };
 
-  const o = parsePosition([0,0,0], { from: Tree.WORLD, to: Tree.SCREEN });
-  console.log("O: ", o);
-  
-  depth = createSlider(0, 1, o.z, 0.001);
+  points = fallback.map(pt => {
+    pt.rotation = getLookAtRotation(pt.worldPosition);
+    return pt;
+  });
+
+  performanceMonitor = new PerformanceMonitor();
+
+  const o = parsePosition([0, 0, 0], { from: Tree.WORLD, to: Tree.SCREEN });
+
+  depth = createSlider(0.01, 0.99, 0.5, 0.01);
   depth.position(10, 10);
   depth.style('width', '580px');
-  
-  color = createColorPicker('#C7C08D');
-  color.position(width - 70, 40);
-  
-  // select initial brush
-  brush = sphereBrush;
 
-  // Initialize performance start time
-  performanceStartTime = millis();
+  color = createColorPicker('#FFC0CB');
+  color.position(width - 70, 40);
+
+  // Inicializar el renderizador instanciado
+  instancedRenderer = new InstancedRenderer();
 }
 
 function draw() {
   // Performance tracking
-  performanceFrameCount++;
-  const currentTime = millis();
-  
-  // Calculate FPS every second
-  if (currentTime - performanceStartTime >= 1000) {
-    performanceFPS = performanceFrameCount / ((currentTime - performanceStartTime) / 1000);
-    performanceStartTime = currentTime;
-    performanceFrameCount = 0;
-    
-    // Track max points
-    performanceMaxPoints = Math.max(performanceMaxPoints, points.length);
-    
-    // Update performance display
-    performanceDiv.html(`
-      FPS: ${performanceFPS.toFixed(2)}<br>
-      Points: ${points.length}<br>
-      Max Points: ${performanceMaxPoints}
-    `);
+  performanceMonitor.update(points.length);
+
+  // If is simulating addRandom points eveery 2 seconds
+
+  // Controles de órbita solo si el ratón está por debajo de la interfaz
+  (mouseY >= 30) && orbitControl();
+
+  if (record) {
+    update();
+    staticBuffersNeedUpdate = true;
   }
 
-  (mouseY >= 30) && orbitControl();
-  record && update();
   background('#000000');
   axes({ size: 50, bits: Tree.X | Tree.Y | Tree.Z | Tree._X | Tree._Y | Tree._Z });
-  
-  for (const point of points) {
+
+  instancedRenderer.render(points, staticBuffersNeedUpdate);
+  staticBuffersNeedUpdate = false;
+}
+
+// Clase para manejar el renderizado instanciado
+class InstancedRenderer {
+  constructor() {
+    this.gl = drawingContext;
+    this.ellipseVertices = this.createEllipseGeometry();
+    this.pointCount = 0;
+    this.maxInstances = 1000000; // Máximo número de instancias
+
+    // Buffers para almacenar posiciones y colores
+    this.positionBuffer = new Float32Array(this.maxInstances * 3);
+    this.colorBuffer = new Float32Array(this.maxInstances * 4);
+    this.rotationBuffer = new Float32Array(this.maxInstances * 4); // Almacena el eje (xyz) y el ángulo (w)
+  }
+
+  createEllipseGeometry() {
+    const vertices = [];
+    const resolution = 0;
+    for (let i = 0; i < resolution; i++) {
+      const angle = (i / resolution) * TWO_PI;
+      const x = cos(angle);
+      const y = sin(angle) * 0.5; // Para hacer una elipse 2:1
+      vertices.push(x, y, 0);
+    }
+    return vertices;
+  }
+
+  // Actualizar buffers con datos de puntos
+  updateBuffers(points) {
+    this.pointCount = Math.min(points.length, this.maxInstances);
+
+    for (let i = 0; i < this.pointCount; i++) {
+      const point = points[i];
+
+      // Posición
+      this.positionBuffer[i * 3] = point.worldPosition.x;
+      this.positionBuffer[i * 3 + 1] = point.worldPosition.y;
+      this.positionBuffer[i * 3 + 2] = point.worldPosition.z;
+
+      // Color
+      const col = point.color;
+      this.colorBuffer[i * 4] = Array.isArray(col) ? col[0] : red(col);
+      this.colorBuffer[i * 4 + 1] = Array.isArray(col) ? col[1] : green(col);
+      this.colorBuffer[i * 4 + 2] = Array.isArray(col) ? col[2] : blue(col);
+      this.colorBuffer[i * 4 + 3] = Array.isArray(col) ? col[3] : alpha(col);
+
+      // Rotación (eje y ángulo)
+      if (point.rotation) {
+        this.rotationBuffer[i * 4] = point.rotation.axis.x;
+        this.rotationBuffer[i * 4 + 1] = point.rotation.axis.y;
+        this.rotationBuffer[i * 4 + 2] = point.rotation.axis.z;
+        this.rotationBuffer[i * 4 + 3] = point.rotation.angle;
+      }
+    }
+  }
+
+  render(points, forceUpdate = false) {
+    if (forceUpdate || this.pointCount !== points.length) {
+      this.updateBuffers(points);
+    }
+
+    // Si no hay puntos, no hay nada que renderizar
+    if (this.pointCount === 0) return;
+
+    // Guardar el estado actual del renderer
     push();
-    translate(point.worldPosition);
-    brush(point);
+
+    beginShape(TRIANGLE_FAN);
+    noStroke();
+
+    for (let i = 0; i < this.pointCount; i++) {
+      // Aplicar posición y rotación para cada instancia
+      push();
+      translate(
+        this.positionBuffer[i * 3],
+        this.positionBuffer[i * 3 + 1],
+        this.positionBuffer[i * 3 + 2]
+      );
+
+      // Aplicar rotación usando un vector temporal
+      const rotX = this.rotationBuffer[i * 4];
+      const rotY = this.rotationBuffer[i * 4 + 1];
+      const rotZ = this.rotationBuffer[i * 4 + 2];
+      const rotAngle = this.rotationBuffer[i * 4 + 3];
+
+      if (p5.Vector) {
+        const rotVector = new p5.Vector(rotX, rotY, rotZ);
+        rotate(rotAngle, rotVector);
+      } else {
+        rotate(rotAngle, [rotX, rotY, rotZ]);
+      }
+
+      // Aplicar color
+      fill(
+        this.colorBuffer[i * 4],
+        this.colorBuffer[i * 4 + 1],
+        this.colorBuffer[i * 4 + 2],
+        this.colorBuffer[i * 4 + 3]
+      );
+
+      ellipse(0, 0, 2, 1, 8);
+
+      pop();
+    }
+
+    endShape();
+
     pop();
   }
 }
 
 function update() {
+  const pos = parsePosition([mouseX, mouseY, depth.value()], { from: Tree.SCREEN, to: Tree.WORLD });
   points.push({
-    worldPosition: parsePosition([mouseX, mouseY, depth.value()], { from: Tree.SCREEN, to: Tree.WORLD }),
+    worldPosition: pos,
     color: color.color(),
-  })
+    rotation: getLookAtRotation(pos)
+  });
+  staticBuffersNeedUpdate = true;
 }
 
-function sphereBrush(point) {
-  push()
-  noStroke()
-  fill(point.color)
-  sphere(1)
-  pop()
+function getLookAtRotation(pointPosition) {
+  const camPos = parsePosition(Tree.ORIGIN, { from: Tree.EYE, to: Tree.WORLD });
+
+  const direction = p5.Vector.sub(camPos, pointPosition, cachedVectors.direction).normalize();
+  const defaultForward = cachedVectors.defaultForward;
+
+  let rotationAxis = p5.Vector.cross(defaultForward, direction, cachedVectors.rotationAxis);
+  if (rotationAxis.magSq() < 0.00001) {
+    rotationAxis.set(1, 0, 0);
+  } else {
+    rotationAxis.normalize();
+  }
+
+  const rotationAngle = Math.acos(p5.Vector.dot(defaultForward, direction));
+
+  return {
+    angle: rotationAngle,
+    axis: rotationAxis.copy() // Necesario para evitar referencias compartidas
+  };
 }
 
 function keyPressed() {
-  key === 'c' && (points = [])
-  key === 'f' && focus()
-  key === 'l' && (points = [...fallback])
-  key === 'p' && (escorzo = !escorzo) && (escorzo ? perspective() : ortho())
-  key === 'r' && (record = !record)
-  key === 's' && saveCloud()
+  switch (key) {
+    case 'c':
+      points = [];
+      staticBuffersNeedUpdate = true;
+      break;
+    case 'f':
+      focus();
+      break;
+    case 'l':
+      points = [...fallback];
+      staticBuffersNeedUpdate = true;
+      break;
+    case 'p':
+      escorzo = !escorzo;
+      escorzo ? perspective() : ortho();
+      break;
+    case 'r':
+      record = !record;
+      break;
+    case 's':
+      saveCloud();
+      break;
+    case 'k':
+      generatePseudoRandomPoints(nextToAdd, 44); break;
+    case 'z':
+      if (is_simulating) {
+        stopSimulation();
+      } else {
+        startSimulation();
+      }
+      break;
+  }
+}
+
+function startSimulation() {
+  is_simulating = true;
+  intervalId = setInterval(generatePseudoRandomPoints, 2000, nextToAdd, 44);
+}
+
+function stopSimulation() {
+  is_simulating = false;
+  clearInterval(intervalId);
 }
 
 function saveCloud() {
   const data = points.map(point => {
-    const color = point.color
-    const colorArray = [red(color) / 255, green(color) / 255, blue(color) / 255, alpha(color) / 255]
+    const color = point.color;
+    const colorArray = Array.isArray(color)
+      ? color
+      : [red(color), green(color), blue(color), alpha(color)];
+
     return {
       x: point.worldPosition.x,
       y: point.worldPosition.y,
       z: point.worldPosition.z,
       color: colorArray
     }
-  })
-  saveJSON(data, 'custom_cloud.json')
+  });
+
+  saveJSON(data, 'custom_cloud.json');
 }
 
+class PerformanceMonitor {
+  constructor() {
+    this.startTime = 0;
+    this.frameCount = 0;
+    this.fps = 0;
+    this.maxPoints = 0;
+    this.displayDiv = null;
+    this.setupDisplay();
+  }
+
+  setupDisplay() {
+    this.displayDiv = createDiv('');
+    this.displayDiv.position(width, 0);
+    this.displayDiv.style('background-color', 'rgba(0,0,0,0.8)');
+    this.displayDiv.style('color', 'white');
+    this.displayDiv.style('padding', '10px');
+    this.startTime = millis();
+  }
+
+  update(pointsCount) {
+    this.frameCount++;
+    const currentTime = millis();
+
+    if (currentTime - this.startTime >= 1000) {
+      this.fps = this.frameCount / ((currentTime - this.startTime) / 1000);
+      this.startTime = currentTime;
+      this.frameCount = 0;
+      this.maxPoints = Math.max(this.maxPoints, pointsCount);
+      this.updateDisplay(pointsCount);
+    }
+  }
+
+  updateDisplay(pointsCount) {
+    this.displayDiv.html(`
+      FPS: ${this.fps.toFixed(2)}<br>
+      Points: ${pointsCount}<br>
+      Max Points: ${this.maxPoints}
+    `);
+  }
+}
+
+let performanceMonitor;
+
 const mouseWheel = () => false
+
+
+
+function generatePseudoRandomPoints(nextPoints, seed) {
+  const x_scale = width * 0.5;
+  const y_scale = height * 0.5;
+  const x_offset = width * 0.25;
+  const y_offset = height * 0.25;
+  for (let i = 0; i < nextPoints.count; i++) {
+    const pos = createVector(
+      Math.random() * x_scale - x_offset,
+      Math.random() * y_scale - y_offset,
+      Math.random() * x_scale - x_offset
+    );
+
+    points.push({
+      worldPosition: pos,
+      color: color.color(),
+      rotation: getLookAtRotation(pos)
+    });
+  }
+
+  nextPoints.count *= 2;
+  staticBuffersNeedUpdate = true;
+}
