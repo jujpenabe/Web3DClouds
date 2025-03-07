@@ -180,7 +180,7 @@ class PointCloudApp {
 
     // Generate points button
     const generateButton = document.createElement("button");
-    generateButton.textContent = "Generate Random Points";
+    generateButton.textContent = "Gen. Random Pts";
     generateButton.style.position = "absolute";
     generateButton.style.top = "100px";
     generateButton.style.left = "20px";

@@ -8,6 +8,7 @@ let fallback = [], points = [];
 let record;
 let nextToAdd = { count: 100, seed: 44 };
 let cachedVectors;
+let recordButton, generateButton;
 
 const x_size = 800;
 const y_size = 600;
@@ -17,11 +18,10 @@ let instancedRenderer;
 let staticBuffersNeedUpdate = true;
 
 function preload() {
-  loadJSON('cloud_500.json', json =>
-    fallback = json.map(entry => ({
-      worldPosition: createVector(entry.x, entry.y, entry.z),
-      color: Array.isArray(entry.color) ? entry.color : [1, 0.75, 0.8, 1] // Color por defecto rosado
-    }))
+  loadJSON('cloud_500.json', json => fallback = json.map(entry => ({
+    worldPosition: createVector(entry.x, entry.y, entry.z),
+    color: Array.isArray(entry.color) ? entry.color : [1, 0.75, 0.8, 1] // Color por defecto rosado
+  }))
   )
 }
 
@@ -53,7 +53,33 @@ function setup() {
   color = createColorPicker('#FFC0CB');
   color.position(width - 70, 40);
 
-  // Inicializar el renderizador instanciado
+  // Botón para toggle recording
+  recordButton = createButton('Draw');
+  recordButton.position(10, 40);
+  recordButton.style('padding', '5px 10px');
+  recordButton.style('background-color', '#333');
+  recordButton.style('color', 'white');
+  recordButton.style('border', 'none');
+  recordButton.style('border-radius', '4px');
+  recordButton.style('cursor', 'pointer');
+  recordButton.mousePressed(() => {
+    record = !record;
+    recordButton.style('background-color', record ? '#cc0000' : '#333');
+    recordButton.html(record ? 'Drawing (Click: Stop)' : 'Draw');
+  });
+
+  // Botón para generar puntos aleatorios
+  generateButton = createButton('Gen. Random Pts');
+  generateButton.position(10, 70);
+  generateButton.style('padding', '5px 10px');
+  generateButton.style('background-color', '#333');
+  generateButton.style('color', 'white');
+  generateButton.style('border', 'none');
+  generateButton.style('border-radius', '4px');
+  generateButton.style('cursor', 'pointer');
+  generateButton.mousePressed(() => {
+    generatePseudoRandomPoints(nextToAdd, 44);
+  });
   instancedRenderer = new InstancedRenderer();
 }
 
@@ -78,7 +104,6 @@ function draw() {
   staticBuffersNeedUpdate = false;
 }
 
-// Clase para manejar el renderizado instanciado
 class InstancedRenderer {
   constructor() {
     this.gl = drawingContext;
@@ -104,7 +129,6 @@ class InstancedRenderer {
     return vertices;
   }
 
-  // Actualizar buffers con datos de puntos
   updateBuffers(points) {
     this.pointCount = Math.min(points.length, this.maxInstances);
 
@@ -238,6 +262,8 @@ function keyPressed() {
       break;
     case 'r':
       record = !record;
+      recordButton.style('background-color', record ? '#cc0000' : '#333');
+      recordButton.html(record ? 'Drawing (Click: Stop)' : 'Draw');
       break;
     case 's':
       saveCloud();
