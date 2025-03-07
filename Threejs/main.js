@@ -5,6 +5,8 @@ const x_size = 800;
 const y_size = 600;
 let nextToAdd = { count: 100, seed: 44 };
 
+let recordButton
+
 
 class PointCloudApp {
   constructor() {
@@ -157,6 +159,41 @@ class PointCloudApp {
     colorPicker.style.left = "20px";
     colorPicker.oninput = (e) => (this.color = e.target.value);
     document.body.appendChild(colorPicker);
+    // Recording toggle button
+    recordButton = document.createElement("button");
+    recordButton.textContent = "Draw";
+    recordButton.style.position = "absolute";
+    recordButton.style.top = "70px";
+    recordButton.style.left = "20px";
+    recordButton.style.padding = "5px 10px";
+    recordButton.style.backgroundColor = "#333";
+    recordButton.style.color = "white";
+    recordButton.style.border = "none";
+    recordButton.style.borderRadius = "4px";
+    recordButton.style.cursor = "pointer";
+    recordButton.onclick = () => {
+      this.recording = !this.recording;
+      recordButton.style.backgroundColor = this.recording ? "#cc0000" : "#333";
+      recordButton.textContent = this.recording ? "Drawing (Click to Stop)" : "Draw";
+    };
+    document.body.appendChild(recordButton);
+
+    // Generate points button
+    const generateButton = document.createElement("button");
+    generateButton.textContent = "Generate Random Points";
+    generateButton.style.position = "absolute";
+    generateButton.style.top = "100px";
+    generateButton.style.left = "20px";
+    generateButton.style.padding = "5px 10px";
+    generateButton.style.backgroundColor = "#333";
+    generateButton.style.color = "white";
+    generateButton.style.border = "none";
+    generateButton.style.borderRadius = "4px";
+    generateButton.style.cursor = "pointer";
+    generateButton.onclick = () => {
+      this.generatePseudoRandomPoints(nextToAdd, 44);
+    };
+    document.body.appendChild(generateButton);
   }
 
   loadPointsFromJSON(filePath) {
@@ -290,6 +327,8 @@ class PointCloudApp {
         break;
       case "r": // Toggle recording
         this.recording = !this.recording;
+        recordButton.style.backgroundColor = this.recording ? "#cc0000" : "#333";
+        recordButton.textContent = this.recording ? "Drawing (Click to Stop)" : "Draw";
         break;
       case "s": // Save cloud
         this.saveCloud();
